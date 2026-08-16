@@ -15,14 +15,12 @@ separated:
 		--figure-dir figures \
 		--final-time 3.0 \
 		--fine-points 96001
-	$(PYTHON) code/plot_separated.py \
-		--result-dir results/first_two \
-		--figure-dir figures
-
 # Coupled simultaneous (L,M) inverse data and heatmap.
 joint:
-	mkdir -p $(MPLCONFIGDIR) figures
-	bash code/run_joint.sh results/joint
+	mkdir -p $(MPLCONFIGDIR) results/joint/summary results/joint/figures figures
+	$(PYTHON) code/joint.py \
+		--output-dir results/joint/summary \
+		--figure-dir results/joint/figures
 	cp results/joint/figures/joint_analytic_inverse.pdf figures/
 	cp results/joint/figures/joint_analytic_inverse.png figures/
 

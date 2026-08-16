@@ -711,6 +711,89 @@ def make_figures(figure_dir: Path, electron_reference: ElectronReference, electr
     plt.close(fig)
 
 
+def make_publication_figures(
+    figure_dir: Path,
+    electron_rows: list[dict],
+    photon_rows: list[dict],
+) -> None:
+    """Write the two compact convergence figures included in the manuscript."""
+    figure_dir.mkdir(parents=True, exist_ok=True)
+
+    fig, axis = plt.subplots(figsize=(3.35, 2.35), constrained_layout=True)
+    for sequence, marker, linestyle in [
+        ("balanced", "o", "-"),
+        ("asymmetric", "s", "--"),
+    ]:
+        rows = sorted(
+            (row for row in electron_rows if row["sequence"] == sequence),
+            key=lambda row: int(row["distance"]),
+        )
+        distances = [int(row["distance"]) for row in rows]
+        errors = [float(row["source_error"]) for row in rows]
+        line, = axis.semilogy(distances, errors, marker=marker, linestyle=linestyle)
+        offset = (7, -6) if sequence == "balanced" else (7, 6)
+        axis.annotate(
+            sequence,
+            xy=(distances[-1], errors[-1]),
+            xytext=offset,
+            textcoords="offset points",
+            fontsize=7.3,
+            color=line.get_color(),
+            ha="left",
+            va="center",
+            clip_on=False,
+        )
+    all_distances = [int(row["distance"]) for row in electron_rows]
+    axis.set_xlim(min(all_distances) - 0.3, max(all_distances) + 2.2)
+    axis.set_xlabel(r"nearest-boundary parameter $d$")
+    axis.set_ylabel(r"$\max_t|v_d(t)-v_\infty(t)|$")
+    axis.grid(True, which="both", alpha=0.25)
+    axis.tick_params(labelsize=7.5)
+    axis.xaxis.label.set_size(8.5)
+    axis.yaxis.label.set_size(8.5)
+    fig.savefig(figure_dir / "electron_exact_limit.pdf", bbox_inches="tight")
+    fig.savefig(figure_dir / "electron_exact_limit.png", dpi=250, bbox_inches="tight")
+    plt.close(fig)
+
+    fig, axis = plt.subplots(figsize=(3.35, 2.35), constrained_layout=True)
+    for family, marker, linestyle, label in [
+        ("gauss-legendre", "o", "-", "Gauss--Legendre"),
+        ("midpoint", "s", "--", "positive midpoint"),
+    ]:
+        rows = sorted(
+            (
+                row for row in photon_rows
+                if row["family"] == family and int(row["order"]) <= 12
+            ),
+            key=lambda row: int(row["order"]),
+        )
+        orders = [int(row["order"]) for row in rows]
+        errors = [float(row["source_error"]) for row in rows]
+        line, = axis.loglog(orders, errors, marker=marker, linestyle=linestyle)
+        offset = (7, -3 if family == "gauss-legendre" else 5)
+        axis.annotate(
+            label,
+            xy=(orders[-1], errors[-1]),
+            xytext=offset,
+            textcoords="offset points",
+            fontsize=7.2,
+            color=line.get_color(),
+            ha="left",
+            va="center",
+            clip_on=False,
+        )
+    axis.set_xlim(1.75, 24)
+    axis.set_xlabel(r"photon quadrature order $M$")
+    axis.set_ylabel(r"$\max_t|j_M(t)-j_\infty(t)|$")
+    axis.grid(True, which="both", alpha=0.25)
+    axis.tick_params(labelsize=7.5)
+    axis.xaxis.label.set_size(8.5)
+    axis.yaxis.label.set_size(8.5)
+    fig.savefig(figure_dir / "photon_exact_limit.pdf", bbox_inches="tight")
+    fig.savefig(figure_dir / "photon_exact_limit.png", dpi=250, bbox_inches="tight")
+    plt.close(fig)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output-dir", type=Path, default=Path("results"))
@@ -829,6 +912,7 @@ def main() -> int:
     (args.output_dir / "exact_reservoir_benchmark.json").write_text(json.dumps(result_json, indent=2), encoding="utf-8")
 
     write_tex_outputs(args.output_dir, electron_results, photon_rows, electron_reference)
+    make_publication_figures(args.figure_dir, electron_rows, photon_rows)
 
     print(json.dumps({
         "elapsed_seconds": result_json["metadata"]["elapsed_seconds"],
