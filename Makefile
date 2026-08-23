@@ -1,35 +1,35 @@
 PYTHON ?= python3
+
 export MPLCONFIGDIR := $(CURDIR)/.mplconfig
 export OMP_NUM_THREADS := 1
 export OPENBLAS_NUM_THREADS := 1
 export MKL_NUM_THREADS := 1
 export NUMEXPR_NUM_THREADS := 1
 
-.PHONY: separated joint schematic reproduce clean-generated
+.PHONY: electronic photon joint data figure2 reproduce clean-generated
 
-# Electronic- and photon-regulator data, tables, and manuscript figures.
-separated:
-	mkdir -p $(MPLCONFIGDIR) results/first_two figures
-	$(PYTHON) code/separated.py \
-		--output-dir results/first_two \
-		--figure-dir figures \
-		--final-time 3.0 \
-		--fine-points 96001
-# Coupled simultaneous (L,M) inverse data and heatmap.
+electronic:
+	mkdir -p results
+	$(PYTHON) code/benchmark_electronic.py --output-dir results
+
+photon:
+	mkdir -p results
+	$(PYTHON) code/benchmark_photon.py --output-dir results
+
 joint:
-	mkdir -p $(MPLCONFIGDIR) results/joint/summary results/joint/figures figures
-	$(PYTHON) code/joint.py \
-		--output-dir results/joint/summary \
-		--figure-dir results/joint/figures
-	cp results/joint/figures/joint_analytic_inverse.pdf figures/
-	cp results/joint/figures/joint_analytic_inverse.png figures/
+	mkdir -p results
+	$(PYTHON) code/benchmark_joint.py --output-dir results
 
-# Device schematic used by the manuscript.
-schematic:
+data: electronic photon joint
+
+figure2:
 	mkdir -p $(MPLCONFIGDIR) figures
-	$(PYTHON) code/schematic.py
+	$(PYTHON) code/plot_figure2.py --data-dir results --figure-dir figures
 
-reproduce: clean-generated separated joint schematic
+reproduce:
+	$(MAKE) clean-generated
+	$(MAKE) data PYTHON=$(PYTHON)
+	$(MAKE) figure2 PYTHON=$(PYTHON)
 
 clean-generated:
 	rm -rf results figures .mplconfig

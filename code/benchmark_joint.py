@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
-"""Generate the joint electronic-photon inverse benchmark data.
-
-Joint analytic-target inverse benchmark for simultaneous electronic/photon regulators.
+"""Reproduce the joint-regulator data in SM Tables S3-S4 / Fig. 2(c).
 
 This replacement benchmark has an exact continuum endpoint on the whole test
 interval, not a numerically generated reference trajectory:
@@ -45,7 +43,6 @@ import csv
 import gc
 import json
 import math
-import platform
 import subprocess
 import sys
 import tempfile
@@ -55,11 +52,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Iterable
 
-import matplotlib.pyplot as plt
-plt.rcParams["pdf.fonttype"] = 42
-plt.rcParams["ps.fonttype"] = 42
 import numpy as np
-import scipy
 from numpy.polynomial.legendre import leggauss
 from scipy.integrate import DOP853
 from scipy.sparse import csr_matrix, diags, dok_matrix
@@ -472,41 +465,11 @@ def run_pair(
     return result
 
 
-def _tex_number(value: float) -> str:
-    mantissa, exponent = f"{value:.3e}".split("e")
-    return rf"{mantissa}\times10^{{{int(exponent)}}}"
-
-
-def _serializable(result: dict[str, object]) -> dict[str, object]:
-    return {
-        key: value.tolist() if isinstance(value, np.ndarray) else value
-        for key, value in result.items()
-    }
-
-
 def _write_csv(path: Path, rows: list[dict[str, object]], fields: list[str]) -> None:
     with path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=fields)
         writer.writeheader()
         writer.writerows({field: row[field] for field in fields} for row in rows)
-
-
-def _write_table(path: Path, rows: list[dict[str, object]]) -> None:
-    primary = [r for r in rows if r["electronic_family"] == "cosine" and r["photon_family"] == "gauss"]
-    primary.sort(key=lambda r: (int(r["L"]), int(r["M"])))
-    lines = [
-        r"\begin{tabular}{ccccc}",
-        r"\toprule",
-        r"$L$ & $M$ & $E^v_{L,M}$ & $E^j_M$ & $E^{\rm src}_{L,M}$\\",
-        r"\midrule",
-    ]
-    for row in primary:
-        lines.append(
-            rf"{row['L']} & {row['M']} & ${_tex_number(float(row['E_v']))}$ & "
-            rf"${_tex_number(float(row['E_j']))}$ & ${_tex_number(float(row['E_src']))}$\\"
-        )
-    lines += [r"\bottomrule", r"\end{tabular}"]
-    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def _primary(rows: list[dict[str, object]], L: int, M: int) -> dict[str, object]:
@@ -515,70 +478,6 @@ def _primary(rows: list[dict[str, object]], L: int, M: int) -> dict[str, object]
         if r["electronic_family"] == "cosine" and r["photon_family"] == "gauss"
         and int(r["L"]) == L and int(r["M"]) == M
     )
-
-
-def _write_macros(path: Path, rows: list[dict[str, object]], cross_rows: list[dict[str, object]], checks: dict[str, object]) -> None:
-    near = _primary(rows, min(L_VALUES), min(M_VALUES))
-    far = _primary(rows, max(L_VALUES), max(M_VALUES))
-    primary_cross = next(r for r in cross_rows if r["electronic_family"] == "cosine" and r["photon_family"] == "gauss")
-    e_spreads = checks["electronic_family_spreads"]
-    p_spreads = checks["photon_family_spreads"]
-    content = "".join([
-        f"\\newcommand{{\\AnalyticJointNear}}{{\\ensuremath{{{_tex_number(float(near['E_src']))}}}}}\n",
-        f"\\newcommand{{\\AnalyticJointFar}}{{\\ensuremath{{{_tex_number(float(far['E_src']))}}}}}\n",
-        f"\\newcommand{{\\AnalyticJointCross}}{{\\ensuremath{{{_tex_number(float(primary_cross['cross_v']))}}}}}\n",
-        f"\\newcommand{{\\AnalyticJointElectronSpreadCoarse}}{{\\ensuremath{{{_tex_number(float(e_spreads[0]['spread_v']))}}}}}\n",
-        f"\\newcommand{{\\AnalyticJointElectronSpreadFine}}{{\\ensuremath{{{_tex_number(float(e_spreads[-1]['spread_v']))}}}}}\n",
-        f"\\newcommand{{\\AnalyticJointPhotonSpreadFineV}}{{\\ensuremath{{{_tex_number(float(p_spreads[-1]['spread_v']))}}}}}\n",
-        f"\\newcommand{{\\AnalyticJointPhotonSpreadFineJ}}{{\\ensuremath{{{_tex_number(float(p_spreads[-1]['spread_j']))}}}}}\n",
-        f"\\newcommand{{\\AnalyticJointKappaMin}}{{\\ensuremath{{{float(min(float(r['min_kappa']) for r in rows)):.3f}}}}}\n",
-        f"\\newcommand{{\\AnalyticJointDensityMax}}{{\\ensuremath{{{_tex_number(float(max(float(r['max_density_tracking_error']) for r in rows)))}}}}}\n",
-        f"\\newcommand{{\\AnalyticJointQMax}}{{\\ensuremath{{{_tex_number(float(max(float(r['max_centered_q_error']) for r in rows)))}}}}}\n",
-        f"\\newcommand{{\\AnalyticJointNormMax}}{{\\ensuremath{{{_tex_number(float(max(float(r['max_norm_error']) for r in rows)))}}}}}\n",
-        f"\\newcommand{{\\AnalyticJointFockMax}}{{\\ensuremath{{{_tex_number(float(max(float(r['max_top_sector_population']) for r in rows)))}}}}}\n",
-        f"\\newcommand{{\\AnalyticJointCutoffV}}{{\\ensuremath{{{_tex_number(float(checks['cutoff_check']['max_v_trace_difference']))}}}}}\n",
-        f"\\newcommand{{\\AnalyticJointTightV}}{{\\ensuremath{{{_tex_number(float(checks['tolerance_check']['max_v_trace_difference']))}}}}}\n",
-        f"\\newcommand{{\\AnalyticJointCrossCutoffV}}{{\\ensuremath{{{_tex_number(float(checks['mixed_defect_numerical_floor']['max_cutoff_v_trace_difference']))}}}}}\n",
-        f"\\newcommand{{\\AnalyticJointCrossTightV}}{{\\ensuremath{{{_tex_number(float(checks['mixed_defect_numerical_floor']['max_tight_v_trace_difference']))}}}}}\n",
-        f"\\newcommand{{\\AnalyticJointCrossFloor}}{{\\ensuremath{{{_tex_number(float(checks['mixed_defect_numerical_floor']['max_numerical_floor']))}}}}}\n",
-    ])
-    path.write_text(content, encoding="utf-8")
-
-
-def _plot_heatmap(path_pdf: Path, path_png: Path, rows: list[dict[str, object]]) -> None:
-    values = np.asarray([
-        [float(_primary(rows, L, M)["E_src"]) for L in L_VALUES]
-        for M in M_VALUES
-    ])
-    fig, axis = plt.subplots(figsize=(3.45, 2.45), constrained_layout=True)
-    image = axis.imshow(np.log10(values), origin="lower", aspect="auto")
-    axis.set_xticks(np.arange(len(L_VALUES)), [str(v) for v in L_VALUES])
-    axis.set_yticks(np.arange(len(M_VALUES)), [str(v) for v in M_VALUES])
-    axis.set_xlabel(r"electronic regulator $L$")
-    axis.set_ylabel(r"photon regulator $M$")
-    axis.tick_params(labelsize=7.5)
-    axis.xaxis.label.set_size(8.5); axis.yaxis.label.set_size(8.5)
-    threshold = float(np.nanmean(np.log10(values)))
-    for i in range(len(M_VALUES)):
-        for k in range(len(L_VALUES)):
-            val = values[i, k]
-            axis.text(k, i, f"{val:.1e}", ha="center", va="center", fontsize=6.2,
-                      color="white" if np.log10(val) < threshold else "black")
-    cb = fig.colorbar(image, ax=axis, pad=0.02)
-    cb.set_label(r"$\log_{10} E^{\rm src}_{L,M}$", fontsize=8.2)
-    cb.ax.tick_params(labelsize=7.0)
-    fig.savefig(path_pdf, bbox_inches="tight")
-    fig.savefig(path_png, dpi=250, bbox_inches="tight")
-    plt.close(fig)
-
-
-def _estimated_dimension(length: int, order: int, cutoff: int) -> int:
-    return math.comb(length, length // 2) * math.comb(cutoff + order + 1, order + 1)
-
-
-def _run_task(task: tuple[str, str, int, int, Parameters]) -> tuple[tuple[str, str, int, int], dict[str, object]]:
-    ef, pf, L, M, p = task
-    return (ef, pf, L, M), run_pair(L, M, ef, pf, p=p)
 
 
 def _trace_map(results: dict[tuple[str, str, int, int], dict[str, object]], key: tuple[str, str, int, int]) -> np.ndarray:
@@ -611,8 +510,8 @@ def _fresh_run_pair(output_dir: Path, L: int, M: int, ef: str, pf: str, p: Param
         return _load_result_npz(out)
 
 
-def run_all(output_dir: Path, figure_dir: Path, p: Parameters = P) -> dict[str, object]:
-    output_dir.mkdir(parents=True, exist_ok=True); figure_dir.mkdir(parents=True, exist_ok=True)
+def run_all(output_dir: Path, p: Parameters = P) -> dict[str, object]:
+    output_dir.mkdir(parents=True, exist_ok=True)
     # Run numerical-floor checks at every corner entering the mixed defect.
     # A four-trace mixed defect must not be certified from the fine point alone.
     print("[benchmark] starting four-corner numerical-floor checks", flush=True)
@@ -646,10 +545,15 @@ def run_all(output_dir: Path, figure_dir: Path, p: Parameters = P) -> dict[str, 
               "min_kappa","max_density_tracking_error","max_centered_q_error","max_norm_error",
               "max_top_sector_population","electronic_dimension","boson_dimension","total_dimension",
               "boson_cutoff","stiffness_min","stiffness_max","time_grid_points","time_grid_step"]
-    _write_csv(output_dir / "joint_analytic_inverse_grid.csv", rows, fields)
-    _write_table(output_dir / "joint_analytic_inverse_table.tex", rows)
-    _plot_heatmap(figure_dir / "joint_analytic_inverse.pdf", figure_dir / "joint_analytic_inverse.png", rows)
-    print("[benchmark] outputs/plot complete", flush=True)
+    _write_csv(output_dir / "joint_all_cases.csv", rows, fields)
+    primary_rows = [r for r in rows if r["electronic_family"] == "cosine" and r["photon_family"] == "gauss"]
+    primary_rows.sort(key=lambda r: (int(r["L"]), int(r["M"])))
+    _write_csv(
+        output_dir / "joint_primary.csv",
+        primary_rows,
+        ["L", "M", "E_v", "E_j", "E_src", "min_kappa"],
+    )
+    print("[benchmark] production CSVs written", flush=True)
 
     cross_rows: list[dict[str, object]] = []
     L0, L1 = min(L_VALUES), max(L_VALUES); M0, M1 = min(M_VALUES), max(M_VALUES)
@@ -714,8 +618,6 @@ def run_all(output_dir: Path, figure_dir: Path, p: Parameters = P) -> dict[str, 
     checks={"electronic_family_spreads":electronic_family_spreads,"photon_family_spreads":photon_family_spreads,
             "cutoff_check":cutoff_check,"tolerance_check":tolerance_check,
             "mixed_defect_numerical_floor":mixed_floor_check}
-    _write_macros(output_dir / "joint_analytic_inverse_macros.tex", rows, cross_rows, checks)
-
     # Acceptance conditions: exact-target tracking, safe inverse gap, resolved cross signal and numerical floor.
     if min(float(r["min_kappa"]) for r in rows) <= 0.75:
         raise RuntimeError("inverse gap became too small")
@@ -734,35 +636,52 @@ def run_all(output_dir: Path, figure_dir: Path, p: Parameters = P) -> dict[str, 
     if float(far["E_src"]) >= 0.12*float(near["E_src"]):
         raise RuntimeError("fine analytic-endpoint source error did not clearly improve")
 
-    payload={
-        "benchmark":"joint_analytic_inverse_replacement",
-        "endpoint":"exact closed-form continuum target and source; no numerical reference trajectory",
-        "analytic_target":{
-            "n":"1/2",
-            "Q":"Q0 + A*(1-cos(nu*t))",
-            "v":"omega*d*Q - d^2/2",
-            "j":"Qdd + omega^2 Q - omega*d/2 - R_infty(t)",
-            "R_infty":"A*nu^2*eta/Z * [(sin(Omega_plus t)-sin(Omega_minus t))/t - (Omega_plus-Omega_minus) cos(nu t)] with removable t=0 value 0",
-        },
-        "metadata":{"python":sys.version,"platform":platform.platform(),"numpy":np.__version__,"scipy":scipy.__version__},
-        "parameters":asdict(p),"L_values":list(L_VALUES),"M_values":list(M_VALUES),
-        "electronic_families":list(ELECTRON_FAMILIES),"photon_families":list(PHOTON_FAMILIES),
-        "grid":rows,"cross_defects":cross_rows,"checks":checks,
+    cross_lookup = {(r["electronic_family"], r["photon_family"]): float(r["cross_v"]) for r in cross_rows}
+    row_lookup = {(r["electronic_family"], r["photon_family"], int(r["L"]), int(r["M"])): r for r in rows}
+    family_rows = []
+    for ef in ELECTRON_FAMILIES:
+        for pf in PHOTON_FAMILIES:
+            family_rows.append({
+                "electronic_family": ef,
+                "photon_family": pf,
+                "E_src_4_1": float(row_lookup[(ef, pf, 4, 1)]["E_src"]),
+                "E_src_8_2": float(row_lookup[(ef, pf, 8, 2)]["E_src"]),
+                "E_src_12_4": float(row_lookup[(ef, pf, 12, 4)]["E_src"]),
+                "cross_v": cross_lookup[(ef, pf)],
+            })
+    _write_csv(
+        output_dir / "joint_family_summary.csv",
+        family_rows,
+        ["electronic_family", "photon_family", "E_src_4_1", "E_src_8_2", "E_src_12_4", "cross_v"],
+    )
+    diagnostics = [{
+        "primary_cross_v": primary_cross,
+        "numerical_floor": float(checks["mixed_defect_numerical_floor"]["max_numerical_floor"]),
+        "cross_to_floor_ratio": primary_cross / float(checks["mixed_defect_numerical_floor"]["max_numerical_floor"]),
+        "global_min_gap": min(float(r["min_kappa"]) for r in rows),
+    }]
+    _write_csv(
+        output_dir / "joint_diagnostics.csv",
+        diagnostics,
+        ["primary_cross_v", "numerical_floor", "cross_to_floor_ratio", "global_min_gap"],
+    )
+    return {
+        "grid": rows,
+        "cross_defects": cross_rows,
+        "checks": checks,
+        "family_summary": family_rows,
+        "diagnostics": diagnostics,
     }
-    (output_dir / "joint_analytic_inverse_benchmark.json").write_text(json.dumps(payload,indent=2),encoding="utf-8")
-    return payload
 
 
 def main() -> int:
     parser=argparse.ArgumentParser()
     parser.add_argument("--output-dir",type=Path,default=Path("results"))
-    parser.add_argument("--figure-dir",type=Path,default=Path("figures"))
-    parser.add_argument("--single-case-out",type=Path)
-    parser.add_argument("--worker-family-dir",type=Path)
-    parser.add_argument("--params-json",type=Path)
-    parser.add_argument("--L",type=int); parser.add_argument("--M",type=int)
-    parser.add_argument("--electron-family"); parser.add_argument("--photon-family")
-    parser.add_argument("--cutoff",type=int); parser.add_argument("--case-rtol",type=float); parser.add_argument("--case-atol",type=float)
+    parser.add_argument("--single-case-out",type=Path,help=argparse.SUPPRESS)
+    parser.add_argument("--params-json",type=Path,help=argparse.SUPPRESS)
+    parser.add_argument("--L",type=int,help=argparse.SUPPRESS); parser.add_argument("--M",type=int,help=argparse.SUPPRESS)
+    parser.add_argument("--electron-family",help=argparse.SUPPRESS); parser.add_argument("--photon-family",help=argparse.SUPPRESS)
+    parser.add_argument("--cutoff",type=int,help=argparse.SUPPRESS); parser.add_argument("--case-rtol",type=float,help=argparse.SUPPRESS); parser.add_argument("--case-atol",type=float,help=argparse.SUPPRESS)
     args=parser.parse_args()
     if args.single_case_out is not None:
         if args.params_json is None: case_p=P
@@ -770,20 +689,17 @@ def main() -> int:
         result=run_pair(args.L,args.M,args.electron_family,args.photon_family,cutoff=args.cutoff,p=case_p,rtol=args.case_rtol,atol=args.case_atol)
         _save_result_npz(args.single_case_out,result)
         return 0
-    if args.worker_family_dir is not None:
-        if args.params_json is None: case_p=P
-        else: case_p=Parameters(**json.loads(args.params_json.read_text(encoding="utf-8")))
-        args.worker_family_dir.mkdir(parents=True, exist_ok=True)
-        if args.electron_family not in ELECTRON_FAMILIES or args.photon_family not in PHOTON_FAMILIES:
-            raise SystemExit("worker requires valid --electron-family and --photon-family")
-        for L in L_VALUES:
-            for M in M_VALUES:
-                print(f"[worker] {args.electron_family}/{args.photon_family} L={L} M={M}", flush=True)
-                result=run_pair(L,M,args.electron_family,args.photon_family,p=case_p)
-                _save_result_npz(args.worker_family_dir / f"{args.electron_family}_{args.photon_family}_L{L}_M{M}.npz", result)
-        return 0
-    payload=run_all(args.output_dir,args.figure_dir)
-    print(json.dumps({"grid":payload["grid"],"cross_defects":payload["cross_defects"],"checks":payload["checks"]},indent=2))
+    payload=run_all(args.output_dir)
+    diagnostics = payload["diagnostics"][0]
+    print(f"wrote joint data to {args.output_dir}")
+    print(
+        "primary cross={:.12e}, numerical floor={:.12e}, ratio={:.3e}, global gap={:.9f}".format(
+            diagnostics["primary_cross_v"],
+            diagnostics["numerical_floor"],
+            diagnostics["cross_to_floor_ratio"],
+            diagnostics["global_min_gap"],
+        )
+    )
     return 0
 
 
