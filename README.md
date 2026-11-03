@@ -1,53 +1,28 @@
-# RTQEDFT numerical reproduction
 
-Minimal code for reproducing every numerical value in the numerical-benchmark
-section and all three panels of Fig. 2 in **“Real-Time Density–Source Mapping
-for Open Electron–Photon Systems.”**
 
-The repository intentionally contains four Python files:
+## Environment and commands
 
-| File | Manuscript output |
-|---|---|
-| `code/benchmark_electronic.py` | SM Table S1 and Fig. 2(a) data |
-| `code/benchmark_photon.py` | SM Table S2 and Fig. 2(b) data |
-| `code/benchmark_joint.py` | SM Tables S3–S4, joint diagnostics, and Fig. 2(c) data |
-| `code/plot_figure2.py` | The three Fig. 2 panels from the generated CSV files |
-
-## Environment
-
-Python 3.9 or newer is sufficient.
 
 ```bash
-python3 -m venv .venv
+python3.13 -m venv .venv
 source .venv/bin/activate
-python -m pip install -r requirements.txt
+python -m pip install numpy==2.3.5 scipy==1.17.0 matplotlib==3.10.8
+python -m pip install torch==2.10.0 --index-url https://download.pytorch.org/whl/cpu
+
+python test_1_constraint.py
+python test_2_ground_state.py
+python test_3_real_time.py
 ```
 
-## Reproduce
 
-```bash
-make reproduce PYTHON=.venv/bin/python
-```
+## Files generated
 
-The electronic and photon benchmarks can be run separately with
-`make electronic` and `make photon`. The coupled calculation, `make joint`, performs
-36 production cases plus the cutoff and tolerance repeats used to certify the
-reported mixed-regulator defect; it is the expensive part of the reproduction.
+| Script | Data | Figure files |
+|---|---|---|
+| `test_1_constraint.py` | `results/test_1/ground_state_scaling.csv`, `charge_scaling.csv`, `fitted_exponents.csv` | `scaling_functional.pdf`, `scaling_potential.pdf`, `scaling_charge.pdf`, `scaling_legend.pdf` |
+| `test_2_ground_state.py` | `results/test_2/polarization_reversal.csv` | `polarization_reversal.pdf` |
+| `test_3_real_time.py` | `results/test_3/spectrum.csv`, `time_trace.csv` | `tqd_spectrum.pdf`, `tqd_time.pdf`, `tqd_legend.pdf` |
 
-Generated CSV files are written to `results/`. Figure 2 panel files are written
-as PDF and PNG to `figures/`.
+All files in a row are written inside the indicated script directory. The eight PDF names match the manuscript's figure assets.
 
-The primary outputs are:
 
-```text
-results/electronic_convergence.csv
-results/photon_convergence.csv
-results/joint_primary.csv
-results/joint_family_summary.csv
-results/joint_diagnostics.csv
-results/joint_all_cases.csv
-results/joint_analytic_inverse_cross.csv
-figures/electron_exact_limit.pdf
-figures/photon_exact_limit.pdf
-figures/joint_analytic_inverse.pdf
-```
